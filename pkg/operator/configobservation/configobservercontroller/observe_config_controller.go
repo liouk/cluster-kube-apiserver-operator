@@ -3,6 +3,7 @@ package configobservercontroller
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -38,7 +39,7 @@ type ConfigObserver struct {
 	factory.Controller
 }
 
-func NewConfigObserver(operatorClient v1helpers.StaticPodOperatorClient, kubeInformersForNamespaces v1helpers.KubeInformersForNamespaces, configInformer configinformers.SharedInformerFactory, operatorInformer operatorv1informers.SharedInformerFactory, resourceSyncer resourcesynccontroller.ResourceSyncer, featureGateAccessor featuregates.FeatureGateAccess, eventRecorder events.Recorder, groupVersionsByFeatureGate map[configv1.FeatureGateName][]schema.GroupVersion) *ConfigObserver {
+func NewConfigObserver(operatorClient v1helpers.StaticPodOperatorClient, kubeInformersForNamespaces v1helpers.KubeInformersForNamespaces, configInformer configinformers.SharedInformerFactory, operatorInformer operatorv1informers.SharedInformerFactory, resourceSyncer resourcesynccontroller.ResourceSyncer, kubeClient kubernetes.Interface, featureGateAccessor featuregates.FeatureGateAccess, eventRecorder events.Recorder, groupVersionsByFeatureGate map[configv1.FeatureGateName][]schema.GroupVersion) *ConfigObserver {
 	interestingNamespaces := []string{
 		operatorclient.GlobalUserSpecifiedConfigNamespace,
 		operatorclient.GlobalMachineSpecifiedConfigNamespace,
@@ -127,6 +128,7 @@ func NewConfigObserver(operatorClient v1helpers.StaticPodOperatorClient, kubeInf
 			auth.ObserveAuthMetadata,
 			auth.ObserveServiceAccountIssuer,
 			auth.ObserveWebhookTokenAuthenticator,
+			auth.NewObserveExternalOIDC(kubeClient, featureGateAccessor),
 			auth.NewObservePodSecurityAdmissionEnforcementFunc(featureGateAccessor),
 			encryption.NewEncryptionConfigObserver(
 				operatorclient.TargetNamespace,
