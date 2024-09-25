@@ -280,11 +280,15 @@ users:
 }
 
 type mockResourceSyncer struct {
-	t      *testing.T
-	synced map[string]string
+	t         *testing.T
+	synced    map[string]string
+	syncError error
 }
 
 func (rs *mockResourceSyncer) SyncConfigMap(destination, source resourcesynccontroller.ResourceLocation) error {
+	if rs.syncError != nil {
+		return rs.syncError
+	}
 	if (source == resourcesynccontroller.ResourceLocation{}) {
 		rs.synced[fmt.Sprintf("configmap/%v.%v", destination.Name, destination.Namespace)] = "DELETE"
 	} else {
@@ -294,6 +298,9 @@ func (rs *mockResourceSyncer) SyncConfigMap(destination, source resourcesynccont
 }
 
 func (rs *mockResourceSyncer) SyncSecret(destination, source resourcesynccontroller.ResourceLocation) error {
+	if rs.syncError != nil {
+		return rs.syncError
+	}
 	if (source == resourcesynccontroller.ResourceLocation{}) {
 		rs.synced[fmt.Sprintf("secret/%v.%v", destination.Name, destination.Namespace)] = "DELETE"
 	} else {
