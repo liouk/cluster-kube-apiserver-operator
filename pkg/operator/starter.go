@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/certrotationtimeupgradeablecontroller"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configmetrics"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configobservation/apienablement"
+	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configobservation/auth"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configobservation/configobservercontroller"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configobservation/node"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/connectivitycheckcontroller"
@@ -600,6 +601,9 @@ var RevisionConfigMaps = []revision.RevisionResource{
 	{Name: "sa-token-signing-certs"},
 
 	{Name: "kube-apiserver-audit-policies"},
+
+	// optional configmap containing the OIDC provider's CA bundle
+	{Name: auth.TargetOIDCCAConfigMapName, Optional: true}, // TODO featuregate?
 }
 
 // RevisionSecrets is a list of secrets that are directly copied for the current values.  A different actor/controller modifies these.
