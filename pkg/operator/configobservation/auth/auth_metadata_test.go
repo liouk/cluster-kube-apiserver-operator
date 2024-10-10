@@ -144,10 +144,9 @@ func TestObserveAuthMetadata(t *testing.T) {
 				},
 			},
 			statusMetadataName: "metadata-from-status",
-			expectedConfig:     baseAuthMetadataConfig,
+			expectedConfig:     nil,
 			expectedSynced: map[string]string{
-				// FIXME should be delete
-				"configmap/oauth-metadata.openshift-kube-apiserver": "configmap/metadata-from-spec.openshift-config",
+				"configmap/oauth-metadata.openshift-kube-apiserver": "DELETE",
 			},
 			expectErrors: false,
 		},
@@ -160,10 +159,9 @@ func TestObserveAuthMetadata(t *testing.T) {
 				},
 			},
 			statusMetadataName: "metadata-from-status",
-			expectedConfig:     baseAuthMetadataConfig,
+			expectedConfig:     nil,
 			expectedSynced: map[string]string{
-				// FIXME should be delete
-				"configmap/oauth-metadata.openshift-kube-apiserver": "configmap/metadata-from-spec.openshift-config",
+				"configmap/oauth-metadata.openshift-kube-apiserver": "DELETE",
 			},
 			expectErrors: false,
 		},

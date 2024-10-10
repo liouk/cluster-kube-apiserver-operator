@@ -39,7 +39,7 @@ func ObserveAuthMetadata(genericListers configobserver.Listers, recorder events.
 	}
 
 	observedConfig := map[string]interface{}{}
-	authConfigNoDefaults, err := listers.AuthConfigLister.Get("cluster")
+	authConfig, err := listers.AuthConfigLister.Get("cluster")
 	if errors.IsNotFound(err) {
 		klog.Warningf("authentications.config.openshift.io/cluster: not found")
 		return observedConfig, errs
@@ -49,34 +49,34 @@ func ObserveAuthMetadata(genericListers configobserver.Listers, recorder events.
 		return prevObservedConfig, errs
 	}
 
-	authConfig := defaultAuthConfig(authConfigNoDefaults)
-
 	var (
 		sourceNamespace string
 		sourceConfigMap string
-		statusConfigMap string
 	)
 
-	specConfigMap := authConfig.Spec.OAuthMetadata.Name
+	switch authConfig.Spec.Type {
+	case configv1.AuthenticationTypeIntegratedOAuth, "":
+		specConfigMap := authConfig.Spec.OAuthMetadata.Name
+		statusConfigMap := authConfig.Status.IntegratedOAuthMetadata.Name
+		if len(statusConfigMap) == 0 {
+			klog.V(5).Infof("no integrated oauth metadata configmap observed from status")
+		}
 
-	// TODO: Add a case here for the KeyCloak type.
-	switch {
-	case len(authConfig.Status.IntegratedOAuthMetadata.Name) > 0 && authConfig.Spec.Type == configv1.AuthenticationTypeIntegratedOAuth:
-		statusConfigMap = authConfig.Status.IntegratedOAuthMetadata.Name
-	default:
-		klog.V(5).Infof("no integrated oauth metadata configmap observed from status")
-	}
+		// Spec configMap takes precedence over Status.
+		switch {
+		case len(specConfigMap) > 0:
+			sourceConfigMap = specConfigMap
+			sourceNamespace = configNamespace
+		case len(statusConfigMap) > 0:
+			sourceConfigMap = statusConfigMap
+			sourceNamespace = managedNamespace
+		default:
+			klog.V(5).Infof("no authentication config metadata specified")
+		}
 
-	// Spec configMap takes precedence over Status.
-	switch {
-	case len(specConfigMap) > 0:
-		sourceConfigMap = specConfigMap
-		sourceNamespace = configNamespace
-	case len(statusConfigMap) > 0:
-		sourceConfigMap = statusConfigMap
-		sourceNamespace = managedNamespace
-	default:
-		klog.V(5).Infof("no authentication config metadata specified")
+	case configv1.AuthenticationTypeNone, configv1.AuthenticationTypeOIDC:
+		// no oauth metadata is served; do not set anything as source
+		// in order to delete the configmap and unset oauthMetadataFile
 	}
 
 	// Sync the user or status-specified configMap to the well-known resting place that corresponds to the oauthMetadataFile path.
@@ -108,14 +108,4 @@ func ObserveAuthMetadata(genericListers configobserver.Listers, recorder events.
 	}
 
 	return observedConfig, errs
-}
-
-func defaultAuthConfig(authConfig *configv1.Authentication) *configv1.Authentication {
-	out := authConfig.DeepCopy() // do not mutate informer cache
-
-	if len(out.Spec.Type) == 0 {
-		out.Spec.Type = configv1.AuthenticationTypeIntegratedOAuth
-	}
-
-	return out
 }
