@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	v1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resourcesynccontroller"
@@ -62,7 +63,7 @@ func ObserveWebhookTokenAuthenticator(genericListers configobserver.Listers, rec
 	}
 
 	observedWebhookConfigured := len(webhookSecretName) > 0
-	if observedWebhookConfigured {
+	if observedWebhookConfigured && auth.Spec.Type != v1.AuthenticationTypeOIDC {
 		// retrieve the secret from config and validate it, don't proceed on failure
 		kubeconfigSecret, err := listers.ConfigSecretLister().Secrets("openshift-config").Get(webhookSecretName)
 		if err != nil {
