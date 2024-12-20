@@ -20,12 +20,20 @@ import (
 )
 
 const (
-	apiServerArgumentsPath = "apiServerArguments"
-	argAuthConfig          = "authentication-config"
+	apiServerArgumentsPath     = "apiServerArguments"
+	argAuthConfig              = "authentication-config"
+	argDisableAdmissionPlugins = "disable-admission-plugins"
 
 	SourceAuthConfigCMNamespace = "openshift-config-managed"
 	AuthConfigCMName            = "auth-config"
 	authConfigKeyName           = "auth-config.json"
+)
+
+var (
+	incompatibleAdmissionPlugins = []string{
+		"authorization.openshift.io/RestrictSubjectBindings",
+		"authorization.openshift.io/ValidateRoleBindingRestriction",
+	}
 )
 
 func NewObserveExternalOIDC(featureGateAccessor featuregates.FeatureGateAccess) configobserver.ObserveConfigFunc {
@@ -111,8 +119,15 @@ func (o *externalOIDC) ObserveExternalOIDC(genericListers configobserver.Listers
 		}
 	}
 
-	observedConfig := make(map[string]interface{})
+	observedConfig := map[string]interface{}{}
+
+	// set the structured authentication config file arg
 	if err := unstructured.SetNestedStringSlice(observedConfig, []string{path.Join("/etc/kubernetes/static-pod-resources/configmaps/", AuthConfigCMName, authConfigKeyName)}, apiServerArgumentsPath, argAuthConfig); err != nil {
+		return existingConfig, []error{err}
+	}
+
+	// disable oauth specific admission plugins
+	if err := unstructured.SetNestedStringSlice(observedConfig, incompatibleAdmissionPlugins, apiServerArgumentsPath, argDisableAdmissionPlugins); err != nil {
 		return existingConfig, []error{err}
 	}
 

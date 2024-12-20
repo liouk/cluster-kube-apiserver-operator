@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/api/features"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/cluster-kube-apiserver-operator/pkg/operator/configobservation"
+	"github.com/openshift/library-go/pkg/operator/configobserver"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 
@@ -46,12 +47,6 @@ var (
 		},
 		Spec: configv1.AuthenticationSpec{
 			Type: configv1.AuthenticationTypeOIDC,
-		},
-	}
-
-	baseConfig = map[string]interface{}{
-		apiServerArgumentsPath: map[string]interface{}{
-			argAuthConfig: []interface{}{path.Join("/etc/kubernetes/static-pod-resources/configmaps/", AuthConfigCMName, authConfigKeyName)},
 		},
 	}
 
@@ -94,6 +89,35 @@ var (
 			"auth-config.json": `{"kind":"AuthenticationConfiguration","apiVersion":"apiserver.config.k8s.io/v1beta1"}`,
 		},
 	}
+
+	oauthConfig = map[string]interface{}{
+		apiServerArgumentsPath: map[string]interface{}{
+			"authentication-token-webhook-config-file": []interface{}{
+				"/etc/kubernetes/static-pod-resources/secrets/webhook-authenticator/kubeConfig",
+			},
+			"authentication-token-webhook-version": []interface{}{
+				"v1",
+			},
+		},
+		"authConfig": map[string]interface{}{
+			"oauthMetadataFile": "", // TODO add a value here
+		},
+	}
+
+	oidcConfig = map[string]interface{}{
+		apiServerArgumentsPath: map[string]interface{}{
+			argAuthConfig: []interface{}{path.Join("/etc/kubernetes/static-pod-resources/configmaps/", AuthConfigCMName, authConfigKeyName)},
+			argDisableAdmissionPlugins: []interface{}{
+				"authorization.openshift.io/RestrictSubjectBindings",
+				"authorization.openshift.io/ValidateRoleBindingRestriction",
+			},
+		},
+	}
+
+	prunedOIDCConfig = configobserver.Pruned(oidcConfig,
+		[]string{apiServerArgumentsPath, argAuthConfig},
+		[]string{apiServerArgumentsPath, argDisableAdmissionPlugins},
+	)
 )
 
 func TestObserveExternalOIDC(t *testing.T) {
@@ -125,8 +149,8 @@ func TestObserveExternalOIDC(t *testing.T) {
 				make(chan struct{}),
 				nil,
 			),
-			existingConfig: baseConfig,
-			expectedConfig: baseConfig,
+			existingConfig: oauthConfig,
+			expectedConfig: oauthConfig,
 			expectErrors:   false,
 		},
 		{
@@ -137,8 +161,8 @@ func TestObserveExternalOIDC(t *testing.T) {
 				makeClosedChannel(),
 				fmt.Errorf("error"),
 			),
-			existingConfig: baseConfig,
-			expectedConfig: baseConfig,
+			existingConfig: oauthConfig,
+			expectedConfig: oauthConfig,
 			expectErrors:   true,
 		},
 		{
@@ -149,15 +173,15 @@ func TestObserveExternalOIDC(t *testing.T) {
 				makeClosedChannel(),
 				nil,
 			),
-			existingConfig: baseConfig,
-			expectedConfig: baseConfig,
+			existingConfig: oauthConfig,
+			expectedConfig: oauthConfig,
 			expectErrors:   false,
 		},
 		{
 			name:           "auth resource not found",
 			featureGates:   featureGatesWithOIDC,
-			existingConfig: baseConfig,
-			expectedConfig: baseConfig,
+			existingConfig: oauthConfig,
+			expectedConfig: oauthConfig,
 			expectErrors:   false,
 			expectEvents:   true,
 		},
@@ -165,14 +189,14 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:           "auth resource retrieval error",
 			featureGates:   featureGatesWithOIDC,
 			authIndexer:    &everFailingIndexer{},
-			existingConfig: baseConfig,
-			expectedConfig: baseConfig,
+			existingConfig: oauthConfig,
+			expectedConfig: oauthConfig,
 			expectErrors:   true,
 		},
 		{
 			name:                    "OAuth target configmap does not exist",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingTargetConfigMap: nil,
 			auth:                    &authResourceWithOAuth,
 			expectedConfig:          nil,
@@ -184,10 +208,10 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:                    "OAuth target configmap lister error",
 			featureGates:            featureGatesWithOIDC,
 			cmIndexer:               &everFailingIndexer{},
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingTargetConfigMap: &baseTargetConfigMap,
 			auth:                    &authResourceWithOAuth,
-			expectedConfig:          nil,
+			expectedConfig:          oauthConfig,
 			expectedSynced:          nil,
 			expectErrors:            true,
 			expectEvents:            false,
@@ -196,10 +220,10 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:                    "OAuth target configmap syncer error",
 			featureGates:            featureGatesWithOIDC,
 			syncerError:             fmt.Errorf("syncer error"),
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingTargetConfigMap: &baseTargetConfigMap,
 			auth:                    &authResourceWithOAuth,
-			expectedConfig:          nil,
+			expectedConfig:          oauthConfig,
 			expectedSynced:          nil,
 			expectErrors:            true,
 			expectEvents:            false,
@@ -207,7 +231,7 @@ func TestObserveExternalOIDC(t *testing.T) {
 		{
 			name:                    "OAuth target configmap exists",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingTargetConfigMap: &baseTargetConfigMap,
 			auth:                    &authResourceWithOAuth,
 			expectedConfig:          nil,
@@ -220,9 +244,10 @@ func TestObserveExternalOIDC(t *testing.T) {
 		{
 			name:                    "OIDC source configmap does not exist",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: nil,
 			auth:                    &authResourceWithOIDC,
+			expectedConfig:          oauthConfig,
 			expectEvents:            false,
 			expectErrors:            false,
 		},
@@ -230,28 +255,30 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:                    "OIDC source configmap lister error",
 			featureGates:            featureGatesWithOIDC,
 			cmIndexer:               &everFailingIndexer{},
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: &baseSourceConfigMap,
 			auth:                    &authResourceWithOIDC,
+			expectedConfig:          oauthConfig,
 			expectEvents:            false,
 			expectErrors:            true,
 		},
 		{
 			name:                    "OIDC new invalid config",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: &invalidSourceConfigMap,
 			auth:                    &authResourceWithOIDC,
+			expectedConfig:          oauthConfig,
 			expectEvents:            false,
 			expectErrors:            true,
 		},
 		{
 			name:                    "OIDC updated invalid config",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          baseConfig,
+			existingConfig:          oidcConfig,
 			existingSourceConfigMap: &invalidSourceConfigMap,
 			auth:                    &authResourceWithOIDC,
-			expectedConfig:          baseConfig,
+			expectedConfig:          oidcConfig,
 			expectEvents:            false,
 			expectErrors:            true,
 		},
@@ -259,9 +286,10 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:                    "OIDC target configmap lister error",
 			featureGates:            featureGatesWithOIDC,
 			listerErrorForNS:        sets.New("openshift-kube-apiserver"),
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: &baseSourceConfigMap,
 			auth:                    &authResourceWithOIDC,
+			expectedConfig:          oauthConfig,
 			expectEvents:            false,
 			expectErrors:            true,
 		},
@@ -269,10 +297,10 @@ func TestObserveExternalOIDC(t *testing.T) {
 			name:                    "OIDC new valid config syncer error",
 			featureGates:            featureGatesWithOIDC,
 			syncerError:             fmt.Errorf("syncer error"),
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: &baseSourceConfigMap,
 			auth:                    &authResourceWithOIDC,
-			expectedConfig:          nil,
+			expectedConfig:          oauthConfig,
 			expectedSynced:          nil,
 			expectEvents:            false,
 			expectErrors:            true,
@@ -280,11 +308,11 @@ func TestObserveExternalOIDC(t *testing.T) {
 		{
 			name:                    "OIDC new valid config",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          nil,
+			existingConfig:          oauthConfig,
 			existingSourceConfigMap: &baseSourceConfigMap,
 			existingTargetConfigMap: nil,
 			auth:                    &authResourceWithOIDC,
-			expectedConfig:          baseConfig,
+			expectedConfig:          prunedOIDCConfig,
 			expectedSynced: map[string]string{
 				"configmap/auth-config.openshift-kube-apiserver": "configmap/auth-config.openshift-config-managed",
 			},
@@ -294,11 +322,11 @@ func TestObserveExternalOIDC(t *testing.T) {
 		{
 			name:                    "OIDC updated valid config without changes",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          baseConfig,
+			existingConfig:          oidcConfig,
 			existingSourceConfigMap: &baseSourceConfigMap,
 			existingTargetConfigMap: &baseTargetConfigMap,
 			auth:                    &authResourceWithOIDC,
-			expectedConfig:          baseConfig,
+			expectedConfig:          prunedOIDCConfig,
 			expectedSynced:          nil,
 			expectEvents:            false,
 			expectErrors:            false,
@@ -306,13 +334,27 @@ func TestObserveExternalOIDC(t *testing.T) {
 		{
 			name:                    "OIDC updated valid config with changes",
 			featureGates:            featureGatesWithOIDC,
-			existingConfig:          baseConfig,
+			existingConfig:          oidcConfig,
 			existingSourceConfigMap: &updatedBaseSourceConfigMap,
 			existingTargetConfigMap: &baseTargetConfigMap,
 			auth:                    &authResourceWithOIDC,
-			expectedConfig:          baseConfig,
+			expectedConfig:          prunedOIDCConfig,
 			expectedSynced: map[string]string{
 				"configmap/auth-config.openshift-kube-apiserver": "configmap/auth-config.openshift-config-managed",
+			},
+			expectEvents: true,
+			expectErrors: false,
+		},
+		{
+			name:                    "switch from OIDC to OAuth",
+			featureGates:            featureGatesWithOIDC,
+			existingConfig:          oidcConfig,
+			existingSourceConfigMap: nil,
+			existingTargetConfigMap: &baseTargetConfigMap,
+			auth:                    &authResourceWithOAuth,
+			expectedConfig:          nil,
+			expectedSynced: map[string]string{
+				"configmap/auth-config.openshift-kube-apiserver": "DELETE",
 			},
 			expectEvents: true,
 			expectErrors: false,
